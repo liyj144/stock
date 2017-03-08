@@ -1,0 +1,9 @@
+pandas==0.19.2
+numpy==1.12.0
+bt
+arch==4.0
+xlrd
+ipython
+sqlalchemy==1.1.6
+flask==0.12
+flask_sqlalchemy==2.2

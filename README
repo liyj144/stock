@@ -1,0 +1,42 @@
+股票数据分析
+数据来源： excel
+数据存储：sqlite
+
+添加主键：
+
+trd:
+PRAGMA foreign_keys=off;
+BEGIN TRANSACTION;
+ALTER TABLE t_trd RENAME TO old_t_trd;
+CREATE TABLE t_trd
+(
+    "id" INTEGER primary key AUTOINCREMENT,
+    "Stkcd" BIGINT,
+	"Trddt" TEXT,
+	"Dnvaltrd" FLOAT,
+	"Dsmvosd" FLOAT,
+	"Dretnd" FLOAT
+);
+
+INSERT INTO t_trd ("Stkcd", "Trddt", "Dnvaltrd", "Dsmvosd", "Dretnd") SELECT * FROM old_t_trd;
+
+COMMIT;
+
+PRAGMA foreign_keys=on;
+
+idx:
+PRAGMA foreign_keys=off;
+BEGIN TRANSACTION;
+ALTER TABLE t_idx RENAME TO old_t_idx;
+CREATE TABLE t_idx
+(
+    "id" INTEGER primary key AUTOINCREMENT,
+    "Idxtrd01" TEXT,
+	"Idxtrd08" FLOAT
+);
+
+INSERT INTO t_idx ("Idxtrd01", "Idxtrd08") SELECT * FROM old_t_idx;
+
+COMMIT;
+
+PRAGMA foreign_keys=on;

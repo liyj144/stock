@@ -7,3 +7,5 @@ ipython
 sqlalchemy==1.1.6
 flask==0.12
 flask_sqlalchemy==2.2
+pudb
+ipython

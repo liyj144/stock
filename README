@@ -41,6 +41,10 @@ COMMIT;
 
 PRAGMA foreign_keys=on;
 
+
+添加索引：
+create index idx_stockfode on t_result (stockfode, date);
+
 批量更新语句：
 
 update t_result set STDi= CASE

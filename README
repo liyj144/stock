@@ -40,3 +40,11 @@ INSERT INTO t_idx ("Idxtrd01", "Idxtrd08") SELECT * FROM old_t_idx;
 COMMIT;
 
 PRAGMA foreign_keys=on;
+
+批量更新语句：
+
+update t_result set STDi= CASE
+when id=1 then 2.5
+when id=2 then 3.5
+when id=3 then 4.5 else STDi END
+where stockfode = 600000;

@@ -42,7 +42,7 @@ class Result(BaseModel):
     stockfode = Column(Integer)
     date = Column(String(32))
     T = Column(Float)
-    Mv = Column(REAL)
+    Mv = Column(Float)
     Rm = Column(Float)
     Ri = Column(Float)
     STDi = Column(Float)
@@ -64,12 +64,20 @@ class DataManager:
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
     excel_dir = '/wls/stock/xls/'
-    once = 5
+    once = 1000
 
     # 创建db
     def createDb(self):
-        metadata = MetaData(self.engine)
-        metadata.create_all(self.engine)
+        BaseModel.metadata.create_all(self.engine)
+
+    #  drop result
+    def dropResult(self):
+        Result.__table__.drop(self.engine)
+
+    # 清空result表
+    def deleteResult(self):
+        self.session.query(Result).delete()
+        self.session.commit()
 
     # 导入trd、idx基础数据到sqlite数据库(trd 表)
     def importData(self):
@@ -96,14 +104,17 @@ class DataManager:
         logger.info(count)
         loops = int(math.ceil(count / self.once))
         for i in xrange(loops):
-            if i >= 2:
-                break
             start = i * self.once
             end = (i + 1) * self.once - 1
             logger.info("Start to manage from " + str(start) + " to " + str(end))
-            #arTrd = self.session.query(Trd).filter(Trd.Stkcd == 600004).offset(start).limit(self.once).all()
-            arTrd = self.session.query(Trd).filter(and_(Trd.Stkcd == 600004, Trd.Trddt == '2012-01-04')).offset(start).limit(self.once).all()
+            arTrd = self.session.query(Trd).offset(start).limit(self.once).all()
+            # arTrd = self.session.query(Trd).filter(Trd.Stkcd == 600004).offset(start).limit(self.once).all()
+            # arTrd = self.session.query(Trd).filter(and_(Trd.Stkcd == 600004, Trd.Trddt == '2012-01-04')).offset(start).limit(self.once).all()
             for trd in arTrd:
+                check_trd = self.session.query(Result).filter(and_(Result.stockfode == trd.Stkcd, Result.date == trd.Trddt)).first()
+                if check_trd:
+                    logger.info("check %d at %s already exist" % (trd.Stkcd, trd.Trddt))
+                    continue
                 idx = self.session.query(Idx).filter(Idx.Idxtrd01 == trd.Trddt).first()
                 if not idx:
                     logger.error(trd.Trddt + ' is not ok')
@@ -144,12 +155,9 @@ class DataManager:
         # am = arch_model(ar, mean='ARX', lags=2)
         #am = arch_model(ar, mean='ARX', lags=2, vol='Garch', p=1, o=0, q=1,power=2.0, dist='Normal', hold_back=None)
         am = arch_model(ar,mean='AR',lags=8,vol='Garch')
-        # pudb.set_trace()
-        # res = am.fit()
-        #res.summary()
         return am.fit().conditional_volatility
 
-
+    # 测试pandas 读取xls文件
     def printXls(self):
         df = pd.read_excel("TRD_Dalyr.xls")
         df_idx = pd.read_excel("IDX_Idxtrd.xls")

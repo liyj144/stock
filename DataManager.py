@@ -12,6 +12,7 @@ from arch import arch_model
 from sqlalchemy import create_engine, Table, MetaData, Column, Integer, Float, REAL, Date, String, and_
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import sqlite3
 import pudb
 
 logging.config.fileConfig('logging.conf')
@@ -55,12 +56,32 @@ class Result(BaseModel):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
+class Result2(BaseModel):
+    __tablename__ = 't_result2'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    stockfode = Column(Integer)
+    date = Column(String(32))
+    T = Column(Float)
+    Mv = Column(Float)
+    Rm = Column(Float)
+    Ri = Column(Float)
+    STDi = Column(Float)
+    STDm = Column(Float)
+    NRM = Column(Float)
+    YRM = Column(Float)
+    TM = Column(Float)
+
+    def as_dict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+
 
 class DataManager:
     '''
     股票数据处理
     '''
-    engine = create_engine('sqlite:///stock.db', echo=True)
+    engine = create_engine('sqlite:///stock.db', echo=False)
+    conn = sqlite3.connect('stock.db')
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
     excel_dir = '/wls/stock/xls/'
@@ -97,24 +118,28 @@ class DataManager:
             except Exception as e:
                 logger.error(e.message)
 
-
-    # 处理数据 （结果保存至 result 表）
-    def managerData(self):
-        count = self.session.query(Trd).count()
+    '''
+    处理数据 （结果保存至 result 表）
+    start_pos: 起始位置
+    with_check: 是否检查记录唯一性
+    '''
+    def managerData(self, start_pos=0, with_check=False):
+        count = self.session.query(Trd).filter(Trd.id.__gt__(start_pos)).count()
         logger.info(count)
         loops = int(math.ceil(count / self.once))
         for i in xrange(loops):
             start = i * self.once
             end = (i + 1) * self.once - 1
             logger.info("Start to manage from " + str(start) + " to " + str(end))
-            arTrd = self.session.query(Trd).offset(start).limit(self.once).all()
+            arTrd = self.session.query(Trd).filter(Trd.id.__gt__(start_pos)).offset(start).limit(self.once).all()
             # arTrd = self.session.query(Trd).filter(Trd.Stkcd == 600004).offset(start).limit(self.once).all()
             # arTrd = self.session.query(Trd).filter(and_(Trd.Stkcd == 600004, Trd.Trddt == '2012-01-04')).offset(start).limit(self.once).all()
             for trd in arTrd:
-                check_trd = self.session.query(Result).filter(and_(Result.stockfode == trd.Stkcd, Result.date == trd.Trddt)).first()
-                if check_trd:
-                    logger.info("check %d at %s already exist" % (trd.Stkcd, trd.Trddt))
-                    continue
+                if with_check:
+                    check_trd = self.session.query(Result).filter(and_(Result.stockfode == trd.Stkcd, Result.date == trd.Trddt)).first()
+                    if check_trd:
+                        logger.info("check %d at %s already exist" % (trd.Stkcd, trd.Trddt))
+                        continue
                 idx = self.session.query(Idx).filter(Idx.Idxtrd01 == trd.Trddt).first()
                 if not idx:
                     logger.error(trd.Trddt + ' is not ok')
@@ -126,6 +151,36 @@ class DataManager:
                 except Exception as e:
                     self.session.rollback()
                     logger.error("Error insert %s" % e.message)
+
+    def manageDataCore(self, start_pos=0, with_check=False):
+        count = self.session.query(Trd).filter(Trd.id.__gt__(start_pos)).count()
+        logger.info(count)
+        loops = int(math.ceil(count / self.once))
+        for i in xrange(loops):
+            start = i * self.once
+            end = (i + 1) * self.once - 1
+            logger.info("Start to manage from " + str(start) + " to " + str(end))
+            arTrd = self.session.query(Trd).filter(Trd.id.__gt__(start_pos)).offset(start).limit(self.once).all()
+            for trd in arTrd:
+                # print(trd.Stkcd)
+                # print(trd.Trddt)
+                # return False
+                if with_check:
+                    check_trd = self.session.query(Result).filter(
+                        and_(Result.stockfode == trd.Stkcd, Result.date == trd.Trddt)).first()
+                    if check_trd:
+                        logger.info("check %d at %s already exist" % (trd.Stkcd, trd.Trddt))
+                        continue
+                idx = self.session.query(Idx).filter(Idx.Idxtrd01 == trd.Trddt).first()
+                if not idx:
+                    logger.error(trd.Trddt + ' is not ok')
+                    continue
+                ar_result = self.computeData(trd, idx.Idxtrd08)
+                row = ((ar_result.stockfode, ar_result.date, ar_result.T, ar_result.Mv, ar_result.Rm,
+                       ar_result.Ri, ar_result.STDi, ar_result.STDm, ar_result.NRM, ar_result.YRM, ar_result.TM))
+                cur = self.conn.cursor()
+                cur.execute("INSERT INTO t_result (stockfode, date, T, Mv, Rm, Ri, STDi, STDm, NRM, YRM, TM) VALUES (?,?,?,?,?,?,?,?,?,?,?)", row)
+            self.conn.commit()
 
     # 根据trd 和 idx 计算目标值
     def computeData(self, trd, idx):
@@ -143,7 +198,6 @@ class DataManager:
         ar_result.NRM = ar_result.Rm if ar_result.Rm <= 0 else 0
         ar_result.YRM = ar_result.Rm if ar_result.Rm > 0 else 0
         ar_result.TM = abs(trd.Dretnd / ar_result.T)
-        logger.info(ar_result.as_dict())
         return ar_result
 
     # 导出数据

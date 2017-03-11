@@ -183,7 +183,7 @@ class DataManager:
         ar_result.TM = abs(trd.Dretnd / ar_result.T)
         return ar_result
 
-    def computeArch(self, stockfode):
+    def computeArch(self, stockfode=0):
         if stockfode:
             ar_stock = self.session.query(distinct(Result.stockfode)).filter(Result.stockfode == stockfode).all()
         else:

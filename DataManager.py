@@ -10,7 +10,7 @@ import logging.config
 import os
 import math
 from arch import arch_model
-from sqlalchemy import create_engine, Column, Integer, Float, String, and_, Index, distinct
+from sqlalchemy import create_engine, Column, Integer, Float, String, and_, Index, distinct, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import sqlite3
@@ -67,6 +67,7 @@ class DataManager:
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
     excel_dir = '/wls/stock/xls/'
+    output_dir = '/wls/stock/output/'
     once = 1000
 
     # 创建db
@@ -182,8 +183,11 @@ class DataManager:
         ar_result.TM = abs(trd.Dretnd / ar_result.T)
         return ar_result
 
-    def computeArch(self):
-        ar_stock = self.session.query(distinct(Result.stockfode)).all()
+    def computeArch(self, stockfode):
+        if stockfode:
+            ar_stock = self.session.query(distinct(Result.stockfode)).filter(Result.stockfode == stockfode).all()
+        else:
+            ar_stock = self.session.query(distinct(Result.stockfode)).all()
         for index, stock in enumerate(ar_stock):
             stockfode = stock[0]
             logger.info("Start to compute %d stock, stock id is %d" % (index+1, stockfode))
@@ -192,17 +196,18 @@ class DataManager:
             if len(ar_result) > 4:
                 # stdi
                 ar_stdi = self.grach_with_array([result[1] for result in ar_result])
-                str_stdi = ''.join([' when id = %d then %f ' % (ar_result[index][0], 0 if np.isnan(stdi) else stdi) for index, stdi in enumerate(ar_stdi)])
+                str_stdi = ''.join([' when id = %d then %f ' % (ar_result[index][0], -9999999.0 if np.isnan(stdi) else stdi) for index, stdi in enumerate(ar_stdi)])
                 # stdm
                 ar_result = self.session.query(Result.id, Result.Rm).filter(Result.stockfode == stockfode).all()
                 ar_stdm = self.grach_with_array([result[1] for result in ar_result])
-                str_stdm = ''.join([' when id = %d then %f ' % (ar_result[index][0], 0 if np.isnan(stdm) else stdm) for index, stdm in enumerate(ar_stdm)])
+                str_stdm = ''.join([' when id = %d then %f ' % (ar_result[index][0], -9999999.0 if np.isnan(stdm) else stdm) for index, stdm in enumerate(ar_stdm)])
                 cur = self.conn.cursor()
                 cur.execute("update t_result set STDi= CASE %s else STDi END, STDm= CASE %s else STDm END where stockfode = %d;" % (str_stdi, str_stdm, stockfode))
                 self.conn.commit()
             else:
                 logger.error("Error to arch stock %d , the array length is %d " % (stockfode, len(ar_result)))
-    # 导出数据
+
+    # 根据ar建立arch模型，并返回数列的方差数组
     def grach_with_array(self, ar):
         #ar = [2.3, 2.5, 2.4, 1, 2, 3.2]
         # ar_date = ['2015-01-01', '2015-01-02', '2015-01-03', '2015-01-04', '2015-01-05', '2015-01-06']
@@ -210,6 +215,70 @@ class DataManager:
         #am = arch_model(ar, mean='ARX', lags=2, vol='Garch', p=1, o=0, q=1,power=2.0, dist='Normal', hold_back=None)
         am = arch_model(ar, mean='AR', lags=2, vol='Garch')
         return am.fit().conditional_volatility
+
+    # 导出计算结果到excel
+    def exportToXls(self, stockfode=0, skip=0, limit=350):
+        if stockfode:
+            logger.info("Start to export stockfode %d " % stockfode)
+            writer = pd.ExcelWriter('%soutput_%d.xlsx' % (self.output_dir, stockfode))
+            ar_stock = self.session.query(distinct(Result.stockfode)).filter(Result.stockfode == stockfode).offset(skip).limit(limit).all()
+        else:
+            logger.info("Start to export all stockfode")
+            writer = pd.ExcelWriter('%soutput_all_%d_%d.xlsx' % (self.output_dir, skip, limit))
+            ar_stock = self.session.query(distinct(Result.stockfode)).offset(skip).limit(limit).all()
+        result_stock = [stock[0] for stock in ar_stock]
+        column = ['stockfode', 'date', 'T', 'Mv', 'Rm', 'Ri', 'STDi', 'STDm', 'NRM', 'YRM', 'TM']
+        data = {}
+        for c in column:
+            data[c] = []
+        for index, stock in enumerate(result_stock):
+            logger.info("start to dump %d stocks" % (index + 1))
+            self.manage_xls_data(data, stock)
+        df = pd.DataFrame(data, columns=column)
+        df.to_excel(writer)
+        writer.save()
+
+    def manage_xls_data(self, data, stockfode):
+        logger.info("Start to manage stockfode %d " % stockfode)
+        ar_result = self.session.query(Result).filter(Result.stockfode == stockfode).all()
+        ret_result = {}
+        for result in ar_result:
+            ret_result[result.date] = result
+        # 样本日期
+        ar_date = self.session.query(Result.date, func.count(Result.date)).group_by(Result.date).all()
+        result_date = [date[0] for date in ar_date]
+        for this_date in result_date:
+            if this_date in ret_result:
+                data['stockfode'].append(result.stockfode)
+                data['date'].append(result.date)
+                data['T'].append(result.T)
+                data['Mv'].append(result.Mv)
+                data['Rm'].append(result.Rm)
+                data['Ri'].append(result.Ri)
+                data['STDi'].append(result.STDi if result.STDi != -9999999.0 else '')
+                data['STDm'].append(result.STDm if result.STDm != -9999999.0 else '')
+                data['NRM'].append(result.NRM)
+                data['YRM'].append(result.YRM)
+                data['TM'].append(result.TM)
+            else:
+                data['stockfode'].append(result.stockfode)
+                data['date'].append(result.date)
+                data['T'].append('')
+                data['Mv'].append('')
+                data['Rm'].append('')
+                data['Ri'].append('')
+                data['STDi'].append('')
+                data['STDm'].append('')
+                data['NRM'].append('')
+                data['YRM'].append('')
+                data['TM'].append('')
+
+    def test_query(self):
+        # cur = self.conn.cursor()
+        # aa = cur.execute("select count(*)  from t_result  group by date;")
+        ar_date = self.session.query(Result.date, func.count(Result.date)).group_by(Result.date).all()
+        result_date = [date[0] for date in ar_date]
+        print(len(result_date), result_date[0])
 
     # 测试pandas 读取xls文件
     def printXls(self):

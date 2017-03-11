@@ -5,7 +5,7 @@ arch==4.0
 xlrd
 ipython
 sqlalchemy==1.1.6
-flask==0.12
-flask_sqlalchemy==2.2
 pudb
 ipython
+xlwt==1.2.0
+openpyxl==2.4.5

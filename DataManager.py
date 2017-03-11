@@ -185,25 +185,23 @@ class DataManager:
     def computeArch(self):
         ar_stock = self.session.query(distinct(Result.stockfode)).all()
         for index, stock in enumerate(ar_stock):
-            if index >= 1:
-                break
             stockfode = stock[0]
             logger.info("Start to compute %d stock, stock id is %d" % (index+1, stockfode))
-            # stdi
             ar_result = self.session.query(Trd.id, Trd.Dretnd).filter(Trd.Stkcd == stockfode).all()
-            ar_stdi = self.grach_with_array([result[1] for result in ar_result])
-            str_stdi = ''.join([' when id = %d then %f ' % (ar_result[index][0], 0 if np.isnan(stdi) else stdi) for index, stdi in enumerate(ar_stdi)])
-
-            # # stdm
-            ar_result = self.session.query(Result.id, Result.Rm).filter(Result.stockfode == stockfode).all()
-            ar_stdm = self.grach_with_array([result[1] for result in ar_result])
-            str_stdm = ''.join([' when id = %d then %f ' % (ar_result[index][0], 0 if np.isnan(stdm) else stdm) for index, stdm in enumerate(ar_stdm)])
-            print(str_stdi)
-            print(str_stdm)
-            cur = self.conn.cursor()
-            cur.execute("update t_result2 set STDi= CASE %s else STDi END, STDm= CASE %s else STDm END where stockfode = %d;" % (str_stdi, str_stdm, stockfode))
-            self.conn.commit()
-
+            logger.info(len(ar_result))
+            if len(ar_result) > 4:
+                # stdi
+                ar_stdi = self.grach_with_array([result[1] for result in ar_result])
+                str_stdi = ''.join([' when id = %d then %f ' % (ar_result[index][0], 0 if np.isnan(stdi) else stdi) for index, stdi in enumerate(ar_stdi)])
+                # stdm
+                ar_result = self.session.query(Result.id, Result.Rm).filter(Result.stockfode == stockfode).all()
+                ar_stdm = self.grach_with_array([result[1] for result in ar_result])
+                str_stdm = ''.join([' when id = %d then %f ' % (ar_result[index][0], 0 if np.isnan(stdm) else stdm) for index, stdm in enumerate(ar_stdm)])
+                cur = self.conn.cursor()
+                cur.execute("update t_result set STDi= CASE %s else STDi END, STDm= CASE %s else STDm END where stockfode = %d;" % (str_stdi, str_stdm, stockfode))
+                self.conn.commit()
+            else:
+                logger.error("Error to arch stock %d , the array length is %d " % (stockfode, len(ar_result)))
     # 导出数据
     def grach_with_array(self, ar):
         #ar = [2.3, 2.5, 2.4, 1, 2, 3.2]

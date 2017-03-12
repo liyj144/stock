@@ -1,11 +1,8 @@
 #coding=utf-8
 
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import division
+from __future__ import print_function, division
 import pandas as pd
 import numpy as np
-import logging
 import logging.config
 import os
 import math
